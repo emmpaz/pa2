@@ -31,6 +31,9 @@ public class dissassembler {
 
 }
 
+/**
+ * this class handles the main part of decoding
+ */
 class MainHandler{
     public static void CheckInstruction(StringBuilder i){
         if(i.substring(0, 11).equals("10001011000")){
