@@ -2,48 +2,73 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Hashtable;
 
 public class dissassembler {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args){
             String inputFile = args[0];
         try (
                 InputStream inputStream = new FileInputStream(inputFile);
         ) {
-            ArrayList<StringBuilder> entireProgram = new ArrayList<>();
-            Hashtable<Integer, Integer> branches = new Hashtable<>();
-            entireProgram.add(new StringBuilder("Main: "));
+            ArrayList<Instruction> entireProgram = new ArrayList<>();
+            ArrayList<BranchInstruction> branches = new ArrayList<>();
             int byteRead;
             int newInstruct = 0;
-            int indexOfProgram = 1;
+            int indexOfProgram = 0;
+            MainHandler handler = new MainHandler();
             StringBuilder instructionSet = new StringBuilder();
             while ((byteRead = inputStream.read()) != -1) {
                 instructionSet.append(String.format("%8s", Integer.toBinaryString(byteRead & 0xFF)).replace(' ', '0'));
                 if(++newInstruct == 4){
-                    entireProgram.add(MainHandler.CheckInstruction(instructionSet, branches, indexOfProgram));
+                    StringBuilder temp = handler.CheckInstruction(instructionSet, branches, indexOfProgram);
+                    entireProgram.add(new Instruction((indexOfProgram==0) ? "Main": "Label"+indexOfProgram, temp));
                     instructionSet = new StringBuilder();
                     newInstruct = 0;
                     indexOfProgram++;
                 }
             }
-            for(Integer i: branches.keySet()){
-                System.out.println(entireProgram.get(i) + " " + i + " " + branches.get(i) + " " + entireProgram.get((i<branches.get(i)) ? branches.get(i) : branches.get(i)-1));
-                if(entireProgram.get((i<branches.get(i)) ? branches.get(i) : branches.get(i)-1).toString().contains(":")){
-                                entireProgram.get((i<branches.get(i)) ? branches.get(i) : branches.get(i)-1).toString().lastIndexOf(" ");
+
+            for(BranchInstruction i : branches){
+                entireProgram.get(i.branchIndex).useLabel = true;
+                entireProgram.get(i.index).string.append(" ").append(entireProgram.get(i.branchIndex).label);
+            }
+            for(Instruction i : entireProgram){
+                if(i.useLabel){
+                    i.string.insert(0, i.label + ":\n");
                 }
             }
+            for(Instruction i : entireProgram)
+                System.out.println(i.string);
         } catch (IOException ex) {
             ex.printStackTrace();
         }
     }
+}
 
+class Instruction{
+    public boolean useLabel;
+    public StringBuilder string;
+    public String label;
+    public Instruction(String label, StringBuilder string){
+        useLabel = false;
+        this.label = label;
+        this.string = new StringBuilder(string);
+    }
+}
+
+class BranchInstruction{
+    public int index;
+    public int branchIndex;
+    public BranchInstruction(int index, int branchIndex){
+        this.index = index;
+        this.branchIndex = branchIndex;
+    }
 }
 
 /**
  * this class handles the main part of decoding
  */
 class MainHandler{
-    public static StringBuilder CheckInstruction(StringBuilder i, Hashtable<Integer, Integer> branches, int indexOfProgram){
+    public StringBuilder CheckInstruction(StringBuilder i, ArrayList<BranchInstruction> branches, int indexOfProgram){
         if(i.substring(0, 11).equals("10001011000")){
             //ADD
             return RType(i, "   ADD", false, false);
@@ -159,7 +184,7 @@ class MainHandler{
         }
     }
 
-    public static int StringToUnsigned(String str){
+    public int StringToUnsigned(String str){
         int unsigned = 0;
         int power = 0;
         for(int i= str.length()-1; i >= 0; i--, power++){
@@ -169,7 +194,7 @@ class MainHandler{
         return unsigned;
     }
 
-    public static int StringtoSigned(String str){
+    public int StringtoSigned(String str){
         int signed = 0;
         if(str.charAt(0) == '1'){
             signed = (int) (-1*Math.pow(2, str.length()-1));
@@ -187,7 +212,7 @@ class MainHandler{
         return signed;
     }
 
-    public static StringBuilder RType(StringBuilder str, String instruction, Boolean logicalShift, Boolean branchRegister){
+    public StringBuilder RType(StringBuilder str, String instruction, Boolean logicalShift, Boolean branchRegister){
         StringBuilder fullString = new StringBuilder();
         fullString.append(instruction);
         if(branchRegister){
@@ -206,7 +231,7 @@ class MainHandler{
         }
         return fullString;
     }
-    public static StringBuilder IType(StringBuilder str, String instruction){
+    public StringBuilder IType(StringBuilder str, String instruction){
         StringBuilder fullString = new StringBuilder();
         fullString.append(instruction);
         fullString.append(" X").append(StringToUnsigned(str.substring(27, 32)));
@@ -214,14 +239,14 @@ class MainHandler{
         fullString.append(", #").append(StringtoSigned(str.substring(10, 22)));
         return fullString;
     }
-    public static StringBuilder DType(StringBuilder str, String instruction){
+    public StringBuilder DType(StringBuilder str, String instruction){
         StringBuilder fullString = new StringBuilder();
         fullString.append(instruction);
         fullString.append(" X").append(StringToUnsigned(str.substring(27, 32)));
         fullString.append(", [X").append(StringToUnsigned(str.substring(22, 27))).append(", #").append(StringToUnsigned(str.substring(11, 20))).append("]");
         return fullString;
     }
-    public static StringBuilder BandCBType(StringBuilder str, String instruction, Boolean compareFlag, Boolean compareBranch, Hashtable<Integer, Integer> branches, int indexOfProgram){
+    public StringBuilder BandCBType(StringBuilder str, String instruction, Boolean compareFlag, Boolean compareBranch, ArrayList<BranchInstruction> branches, int indexOfProgram){
         StringBuilder fullString = new StringBuilder();
         fullString.append(instruction);
         if(compareFlag){
@@ -267,24 +292,17 @@ class MainHandler{
             else if(str.substring(27, 32).equals("01101")){
                 fullString.append(".LE");
             }
-            fullString.append(" ").append(StringtoSigned(str.substring(8, 27)));
-            branches.put(indexOfProgram, StringtoSigned(str.substring(8, 27)) + indexOfProgram);
+            fullString.append(" ");
+            branches.add(new BranchInstruction(indexOfProgram, StringtoSigned(str.substring(8, 27)) + indexOfProgram));
         }
         else if(compareBranch){
-            fullString.append(" X").append(StringToUnsigned(str.substring(27, 32))).append(", ").append(StringtoSigned(str.substring(8, 27)));
-            branches.put(indexOfProgram, StringtoSigned(str.substring(8, 27)) + indexOfProgram);
+            fullString.append(" X").append(StringToUnsigned(str.substring(27, 32))).append(", ");
+            branches.add(new BranchInstruction(indexOfProgram, StringtoSigned(str.substring(8, 27)) + indexOfProgram));
         }
         else{
-            fullString.append(" ").append(StringtoSigned(str.substring(6, 32)));
-            branches.put(indexOfProgram, StringtoSigned(str.substring(6, 32)) + indexOfProgram);
+            fullString.append(" ");
+            branches.add(new BranchInstruction(indexOfProgram, StringtoSigned(str.substring(6, 32)) + indexOfProgram));
         }
         return fullString;
-    }
-    public static boolean contains(StringBuilder str, char toCheck){
-        for(int i = 0; i < str.length(); i++){
-            if(str.charAt(i) == toCheck)
-                return true;
-        }
-        return false;
     }
 }
