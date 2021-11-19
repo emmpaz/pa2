@@ -7,7 +7,7 @@ public class dissassembler {
     public static void main(String[] args){
             String inputFile = args[0];
         try (
-                InputStream inputStream = new FileInputStream(inputFile);
+                InputStream inputStream = new FileInputStream(inputFile)
         ) {
             ArrayList<Instruction> entireProgram = new ArrayList<>();
             ArrayList<BranchInstruction> branches = new ArrayList<>();
@@ -20,7 +20,7 @@ public class dissassembler {
                 instructionSet.append(String.format("%8s", Integer.toBinaryString(byteRead & 0xFF)).replace(' ', '0'));
                 if(++newInstruct == 4){
                     StringBuilder temp = handler.CheckInstruction(instructionSet, branches, indexOfProgram);
-                    entireProgram.add(new Instruction((indexOfProgram==0) ? "Main": "Label"+indexOfProgram, temp));
+                    entireProgram.add(new Instruction((indexOfProgram==0) ? "Main": "Label"+indexOfProgram, temp, false));
                     instructionSet = new StringBuilder();
                     newInstruct = 0;
                     indexOfProgram++;
@@ -28,8 +28,11 @@ public class dissassembler {
             }
 
             for(BranchInstruction i : branches){
-                entireProgram.get(i.branchIndex).useLabel = true;
-                entireProgram.get(i.index).string.append(" ").append(entireProgram.get(i.branchIndex).label);
+                if(i.branchIndex < entireProgram.size())
+                    entireProgram.get(i.branchIndex).useLabel = true;
+                else
+                    entireProgram.add(new Instruction("End", new StringBuilder(), true));
+                entireProgram.get(i.index).string.append(entireProgram.get(i.branchIndex).label);
             }
             for(Instruction i : entireProgram){
                 if(i.useLabel){
@@ -48,10 +51,11 @@ class Instruction{
     public boolean useLabel;
     public StringBuilder string;
     public String label;
-    public Instruction(String label, StringBuilder string){
-        useLabel = false;
+    public Instruction(String label, StringBuilder string, boolean useLabel){
+        this.useLabel = useLabel;
         this.label = label;
         this.string = new StringBuilder(string);
+
     }
 }
 
